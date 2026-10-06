@@ -50,6 +50,8 @@ curl --noproxy '*' -fsS http://127.0.0.1:8080/health
 
 必须在登录后的桌面会话中启动，不能用普通 systemd 系统服务直接启动 GUI。脚本使用专用 Chromium profile，不影响用户普通浏览器。
 
+脚本在 Wayland 会话显式使用 Wayland，在 X11 会话使用 X11；专用 profile 使用 `--password-store=basic` 避免无人值守启动被钥匙串解锁对话框阻塞。不要在这个 profile 登录其他网站或保存密码：basic 密码存储不使用系统钥匙串加密，应用的 Immich Key 仍只在后端私密配置中。
+
 labwc 桌面：如果用户没有 `~/.config/labwc/autostart`，先复制 `/etc/xdg/labwc/autostart`（存在时），以保留面板等默认启动项；已有文件先备份，不能覆盖。
 
 ```bash
@@ -91,7 +93,11 @@ curl --noproxy '*' -fsS http://127.0.0.1:8080/health
 ## 当前设备预检记录
 
 - 已确认 ARM64、Debian 13、Python 3.13.5、Chromium、labwc 配置目录。
-- 指定 Immich 地址从开发电脑可达；树莓派访问超时，未发现 tailscale 命令。
-- 尚未修改网络、桌面或显示配置；生产照片联调需先解决网络前置条件。
+- 原 Tailscale 地址从树莓派访问超时，未安装 Tailscale；改用设备可达的局域网地址后，ping、随机搜索和 preview 下载均成功。真实地址只存设备私密环境文件，不在公开文档中记录。
+- 已安装 `/opt/igallery`、root-only 0600 环境文件和 systemd unit；服务 active、enabled，首次成功缓存 100 张图片。
+- 已备份并保留 labwc 默认桌面启动项，追加 kiosk 自启动；已有桌面自动登录，不修改网络或显示设置。
+- HDMI 当前 1920×1080、60 Hz、100% 缩放；Wayland 桌面截图确认 Chromium 全屏显示照片。
+- 后端重启后读取 100 张旧缓存；模拟上游失败仍保留 100 张。整机重启后的自动全屏和长期不熄屏尚未验证。
+- 桌面曾显示低电压警告，`vcgencmd get_throttled` 为 `0x50000`（历史欠压与降频记录，采样时无当前欠压位）；建议检查供电适配器和线材，不通过屏蔽警告掩盖问题。
 - 开发电脑真实联调已确认 Immich v3.2.4：获取并缓存 3 张预览图成功，重新载入缓存恢复 3 张，模拟上游故障仍保留全部 3 张。
-- 此记录不代表树莓派或 BOE 实际显示已验收。
+- 桌面截图不等于 BOE 面板的现场观感验收；画屏 HDMI 输入源、亮度及实体显示需设备所有者确认。

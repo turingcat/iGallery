@@ -18,6 +18,20 @@ def test_kiosk_waits_for_service_and_uses_local_url(tmp_path):
     calls = log.read_text().splitlines()
     assert calls[0] == 'sleep'
     assert '--kiosk' in calls
+    assert '--password-store=basic' in calls
     assert 'http://127.0.0.1:8080' in calls
     assert '--no-sandbox' not in calls
     assert result.returncode != 0
+
+
+def test_kiosk_selects_wayland_for_wayland_session(tmp_path):
+    bindir = tmp_path / 'bin'
+    bindir.mkdir()
+    log = tmp_path / 'calls'
+    (bindir / 'curl').write_text('#!/bin/sh\nexit 0\n')
+    (bindir / 'chromium').write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$CALLS"\nkill -TERM "$PPID"\n')
+    for path in bindir.iterdir():
+        path.chmod(0o755)
+    env = {**os.environ, 'PATH': str(bindir) + ':/usr/bin:/bin', 'CALLS': str(log), 'HOME': str(tmp_path), 'WAYLAND_DISPLAY': 'wayland-0'}
+    subprocess.run(['bash', 'deploy/kiosk.sh'], env=env, timeout=5, capture_output=True)
+    assert '--ozone-platform=wayland' in log.read_text().splitlines()
