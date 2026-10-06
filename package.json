@@ -1,0 +1,10 @@
+{
+  "name": "igallery-web-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/web/player.test.mjs",
+    "test:browser": "playwright test --config tests/web/playwright.config.mjs"
+  },
+  "devDependencies": { "@playwright/test": "^1.56.0" }
+}
