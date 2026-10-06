@@ -1,0 +1,21 @@
+[Unit]
+Description=iGallery offline Immich photo frame
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/igallery
+EnvironmentFile=/etc/igallery.env
+Environment=IGALLERY_CACHE_DIR=/var/lib/igallery
+ExecStart=/opt/igallery/.venv/bin/python -m igallery
+Restart=on-failure
+RestartSec=5
+StateDirectory=igallery
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

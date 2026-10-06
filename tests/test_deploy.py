@@ -1,0 +1,23 @@
+import os
+import subprocess
+from pathlib import Path
+
+
+def test_kiosk_waits_for_service_and_uses_local_url(tmp_path):
+    bindir = tmp_path / 'bin'
+    bindir.mkdir()
+    log = tmp_path / 'calls'
+    count = tmp_path / 'polls'
+    (bindir / 'curl').write_text('#!/bin/sh\nif [ ! -f "$POLLS" ]; then touch "$POLLS"; exit 1; fi\nexit 0\n')
+    (bindir / 'sleep').write_text('#!/bin/sh\necho sleep >> "$CALLS"\n')
+    (bindir / 'chromium').write_text('#!/bin/sh\nprintf "%s\\n" "$@" >> "$CALLS"\nkill -TERM "$PPID"\n')
+    for path in bindir.iterdir():
+        path.chmod(0o755)
+    env = {**os.environ, 'PATH': str(bindir) + ':/usr/bin:/bin', 'CALLS': str(log), 'POLLS': str(count), 'HOME': str(tmp_path)}
+    result = subprocess.run(['bash', 'deploy/kiosk.sh'], env=env, timeout=5, capture_output=True)
+    calls = log.read_text().splitlines()
+    assert calls[0] == 'sleep'
+    assert '--kiosk' in calls
+    assert 'http://127.0.0.1:8080' in calls
+    assert '--no-sandbox' not in calls
+    assert result.returncode != 0
