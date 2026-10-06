@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 const photo = n => `/api/photo/00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
 
-async function setup(page, playlist) {
+async function setup(page, playlist, interval = 1) {
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.clock.install();
@@ -13,7 +13,7 @@ async function setup(page, playlist) {
     if (url.pathname === '/api/photos') {
       const data = playlist();
       if (data === null) return route.fulfill({status: 500});
-      return route.fulfill({json: {photos: data.map(url => ({url})), interval_seconds: 1}});
+      return route.fulfill({json: {photos: data.map(url => ({url})), interval_seconds: interval}});
     }
     if (url.pathname.startsWith('/api/photo/')) {
       if (url.pathname === photo(9)) return route.fulfill({status: 404});
@@ -34,6 +34,16 @@ test('switches preloaded photos without overflow', async ({page}) => {
   await expect(page.locator('.active')).toHaveAttribute('src', photo(2));
   expect(await page.evaluate(() => document.body.scrollWidth <= innerWidth)).toBe(true);
   expect(errors).toEqual([]);
+});
+
+test('uses a three-second fade and fifteen-second switch interval', async ({page}) => {
+  await setup(page, () => [photo(1), photo(2)], 15);
+  await expect(page.locator('.active')).toHaveAttribute('src', photo(1));
+  expect(await page.locator('.active').evaluate(image => getComputedStyle(image).transitionDuration)).toBe('3s');
+  await page.clock.runFor(14000);
+  await expect(page.locator('.active')).toHaveAttribute('src', photo(1));
+  await page.clock.runFor(2000);
+  await expect(page.locator('.active')).toHaveAttribute('src', photo(2));
 });
 
 test('empty, bad image, service failure and new batch recover', async ({page}) => {
