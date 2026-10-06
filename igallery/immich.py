@@ -43,7 +43,7 @@ class ImmichClient:
                 if album:
                     random.shuffle(ids)
                 return ids[:self.settings.cache_count]
-        except (httpx.HTTPError, ValueError):
+        except (httpx.HTTPError, httpx.InvalidURL, ValueError):
             raise SourceError("source_request") from None
 
     async def download(self, asset_id: str) -> bytes:
@@ -63,5 +63,5 @@ class ImmichClient:
                     if len(body) > MAX_IMAGE_BYTES:
                         raise SourceError("source_size")
                 return bytes(body)
-        except (httpx.HTTPError, ValueError):
+        except (httpx.HTTPError, httpx.InvalidURL, ValueError):
             raise SourceError("source_request") from None

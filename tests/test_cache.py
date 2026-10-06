@@ -94,3 +94,16 @@ async def test_corrupt_manifest_missing_file_and_symlink(settings, tmp_path):
     assert restored.photo_ids() == [IDS[1]]
     assert restored.path_for(IDS[0]) is None
     assert outside.exists()
+
+async def test_corrupted_referenced_image_is_downloaded_again(settings):
+    cache = PhotoCache(settings)
+    await cache.refresh(Source(IDS[:2]))
+    (settings.cache_dir / (IDS[0] + '.jpg')).write_bytes(b'corrupted')
+    restored = PhotoCache(settings)
+    restored.load()
+    assert restored.photo_ids() == [IDS[1]]
+    source = Source(IDS[:2])
+    assert await restored.refresh(source)
+    assert IDS[0] in source.downloads
+    with Image.open(restored.path_for(IDS[0])) as image:
+        assert image.format == 'JPEG'

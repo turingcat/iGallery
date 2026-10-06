@@ -18,17 +18,23 @@ const player = createPlayer({
       const timer = setTimeout(() => finish(false), 10000);
       function finish(ok) {
         clearTimeout(timer); image.onload = image.onerror = null;
-        if (ok) resolve(); else { image.src = ''; reject(Error('Image unavailable')); }
+        if (ok) resolve(image); else { image.src = ''; reject(Error('Image unavailable')); }
       }
       image.onload = () => image.decode().then(() => finish(true), () => finish(false));
       image.onerror = () => finish(false);
       image.src = url;
     });
   },
-  showImage(url) {
+  showImage(url, image) {
     const next = 1 - active;
-    slides[next].src = url;
-    slides[next].classList.add('active');
+    image.className = 'slide';
+    image.alt = '';
+    image.draggable = false;
+    slides[next].replaceWith(image);
+    slides[next] = image;
+    // Commit the initial opacity before revealing the already-decoded image.
+    void image.offsetWidth;
+    image.classList.add('active');
     slides[active].classList.remove('active');
     active = next;
     document.querySelector('#waiting').hidden = true;

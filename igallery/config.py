@@ -5,6 +5,8 @@ from typing import Mapping
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
+import httpx
+
 
 def valid_id(value: object) -> bool:
     if not isinstance(value, str):
@@ -29,7 +31,11 @@ class Settings:
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     env = os.environ if env is None else env
     try:
-        url = urlsplit(env.get("IMMICH_URL", "").strip())
+        raw = env.get("IMMICH_URL", "").strip()
+        if any(ord(c) < 32 or ord(c) == 127 for c in raw):
+            raise ValueError()
+        httpx.URL(raw)
+        url = urlsplit(raw)
         if (url.scheme not in ("http", "https") or not url.hostname
                 or url.username or url.password or url.query or url.fragment):
             raise ValueError()
@@ -38,7 +44,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         if not path.endswith("/api"):
             path += "/api"
         base = urlunsplit((url.scheme, url.netloc, path, "", ""))
-    except ValueError:
+    except (ValueError, httpx.InvalidURL):
         raise ValueError("Invalid IMMICH_URL") from None
     key = env.get("IMMICH_API_KEY", "").strip()
     if not key or any(ord(c) < 32 or ord(c) > 126 for c in key):

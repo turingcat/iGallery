@@ -23,3 +23,8 @@ def test_album_and_cache_path(tmp_path):
     cfg = load_settings({**BASE, "IMMICH_ALBUM_ID": "00000000-0000-0000-0000-000000000001", "IGALLERY_CACHE_DIR": str(tmp_path)})
     assert cfg.album_id == "00000000-0000-0000-0000-000000000001"
     assert cfg.cache_dir == tmp_path
+
+@pytest.mark.parametrize('url', ['http://[v1.foo]', 'http://nas.example/pho\ntos', 'http://nas.example/pho\ttos'])
+def test_rejects_urls_that_break_transport(url):
+    with pytest.raises(ValueError):
+        load_settings({**BASE, 'IMMICH_URL': url})

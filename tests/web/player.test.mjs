@@ -43,3 +43,14 @@ test('rejects remote and traversal image URLs', async () => {
   const f = fixture([['https://evil.example/image', '/api/photo/../../etc/passwd', A]]);
   await f.player.step(); assert.deepEqual(f.shown, [A]);
 });
+test('retains the decoded image resource through presentation', async () => {
+  const resource = {decoded: true};
+  let displayed;
+  const player = createPlayer({
+    fetchList: async () => ({photos: [{url: A}], interval_seconds: 30}),
+    loadImage: async () => resource,
+    showImage: (url, image) => { displayed = image; }, wait: async () => {}
+  });
+  await player.step();
+  assert.equal(displayed, resource);
+});

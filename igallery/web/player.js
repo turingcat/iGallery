@@ -3,7 +3,7 @@ const localPhoto = /^\/api\/photo\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 export function createPlayer({ fetchList, loadImage, showImage, wait }) {
   let photos = [], index = 0, interval = 30000, visible = false, pending = null;
   function preload(url) {
-    return loadImage(url).then(() => true, () => false);
+    return loadImage(url).then(image => ({image}), () => null);
   }
   return {
     async step() {
@@ -26,8 +26,9 @@ export function createPlayer({ fetchList, loadImage, showImage, wait }) {
         const url = photos[index++].url;
         const ready = pending || preload(url);
         pending = null;
-        if (await ready) {
-          showImage(url);
+        const loaded = await ready;
+        if (loaded) {
+          showImage(url, loaded.image);
           visible = true;
           if (index < photos.length) pending = preload(photos[index].url);
           return;

@@ -51,3 +51,45 @@ test('empty, bad image, service failure and new batch recover', async ({page}) =
   await expect(page.locator('.active')).toHaveAttribute('src', photo(2));
   expect(errors).toEqual([]);
 });
+
+test('keeps actual loaded image when next request becomes unavailable', async ({page}) => {
+  await setup(page, () => [photo(1), photo(2)]);
+  await expect(page.locator('.active')).toHaveAttribute('src', photo(1));
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Network.clearBrowserCache');
+  await page.route('**' + photo(2), route => route.fulfill({status: 404}));
+  await cdp.send('HeapProfiler.collectGarbage');
+  await page.clock.runFor(2000);
+  await expect.poll(() => page.locator('.active').evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
+});
+
+test('hung playlist request times out and recovers', async ({page}) => {
+  await setup(page, () => [photo(1)]);
+  await expect(page.locator('.active')).toHaveAttribute('src', photo(1));
+  let recover = false;
+  await page.route('**/api/photos', route => {
+    if (recover) return route.fulfill({json: {photos: [{url: photo(2)}], interval_seconds: 1}});
+    return new Promise(() => {});
+  });
+  await page.clock.runFor(12000);
+  await expect(page.locator('.active')).toHaveAttribute('src', photo(1));
+  recover = true;
+  await page.clock.runFor(15000);
+  await expect(page.locator('.active')).toHaveAttribute('src', photo(2));
+});
+
+test('hung image and all bad images preserve display and recover', async ({page}) => {
+  let list = [photo(1)];
+  await setup(page, () => list);
+  await expect(page.locator('.active')).toHaveAttribute('src', photo(1));
+  await page.route('**' + photo(3), () => new Promise(() => {}));
+  list = [photo(3)];
+  await page.clock.runFor(17000);
+  await expect(page.locator('.active')).toHaveAttribute('src', photo(1));
+  list = [photo(9)];
+  await page.clock.runFor(17000);
+  await expect(page.locator('.active')).toHaveAttribute('src', photo(1));
+  list = [photo(2)];
+  await page.clock.runFor(17000);
+  await expect(page.locator('.active')).toHaveAttribute('src', photo(2));
+});

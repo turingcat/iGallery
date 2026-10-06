@@ -52,7 +52,16 @@ class PhotoCache:
 
     def _exists(self, asset_id):
         path = self._path(asset_id)
-        return not path.is_symlink() and path.is_file()
+        if path.is_symlink() or not path.is_file():
+            return False
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", Image.DecompressionBombWarning)
+                with Image.open(path) as image:
+                    image.verify()
+                    return image.format == "JPEG"
+        except (OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning):
+            return False
 
     def load(self) -> None:
         try:

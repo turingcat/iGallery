@@ -59,3 +59,11 @@ async def test_rejects_nonimage_or_oversize(content, headers):
     async with httpx.AsyncClient(transport=httpx.MockTransport(lambda req: httpx.Response(200, content=content, headers=headers))) as http:
         with pytest.raises(SourceError):
             await ImmichClient(CFG, http).download(ID)
+
+async def test_invalid_transport_url_is_sanitized():
+    def handler(req):
+        raise httpx.InvalidURL('unit-test-secret')
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        with pytest.raises(SourceError) as error:
+            await ImmichClient(CFG, http).list_ids()
+        assert 'unit-test-secret' not in str(error.value)
