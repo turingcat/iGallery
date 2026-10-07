@@ -59,11 +59,36 @@ test('passes the visible photo date only after successful loading', async () => 
   const shown = [];
   const player = createPlayer({
     fetchList: async () => ({photos: [
-      {url: A, taken_date: '2020-01-02'}, {url: B, taken_date: '2021-03-04'}
+      {url: A, taken_date: '2020-01-02', location: 'Paris'}, {url: B, taken_date: '2021-03-04', location: 'London'}
     ]}),
     loadImage: async url => { if (url === B) throw Error('missing'); return {}; },
-    showImage: (url, image, date) => shown.push([url, date]), wait: async () => {}
+    showImage: (url, image, date, location) => shown.push([url, date, location]), wait: async () => {}
   });
   await player.step(); await player.step();
-  assert.deepEqual(shown, [[A, '2020-01-02']]);
+  assert.deepEqual(shown, [[A, '2020-01-02', 'Paris']]);
+});
+
+test('clears a displayed photo excluded by a successful playlist refresh', async () => {
+  let list = [{url: A}], cleared = 0;
+  const player = createPlayer({
+    fetchList: async () => ({photos: list}), loadImage: async () => ({}),
+    showImage: () => {}, clearImage: () => cleared++, wait: async () => {}
+  });
+  await player.step();
+  list = [];
+  await player.step();
+  assert.equal(cleared, 1);
+});
+
+test('clears an excluded photo even when its replacement cannot load', async () => {
+  let list = [{url: A}], cleared = 0;
+  const player = createPlayer({
+    fetchList: async () => ({photos: list}),
+    loadImage: async url => { if (url === B) throw Error('missing'); return {}; },
+    showImage: () => {}, clearImage: () => cleared++, wait: async () => {}
+  });
+  await player.step();
+  list = [{url: B}];
+  await player.step();
+  assert.equal(cleared, 1);
 });

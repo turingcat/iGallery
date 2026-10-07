@@ -45,7 +45,7 @@ async def test_persist_and_reuse(settings):
         assert image.size == (32, 24)
     assert restored.path_for('../bad') is None
 
-@pytest.mark.parametrize('source', [Source([], fail=True), Source([]), Source([IDS[2]], bad=[IDS[2]])])
+@pytest.mark.parametrize('source', [Source([], fail=True)])
 async def test_failure_preserves_old(settings, source):
     cache = PhotoCache(settings)
     await cache.refresh(Source(IDS[:2]))
@@ -59,9 +59,9 @@ async def test_partial_success_and_cleanup(settings):
     cache = PhotoCache(settings)
     await cache.refresh(Source(IDS[:2]))
     assert await cache.refresh(Source(IDS[2:], bad=[IDS[3]]))
-    assert cache.photo_ids() == [IDS[2], IDS[0]]
+    assert cache.photo_ids() == [IDS[2]]
     assert not (settings.cache_dir / (IDS[1] + '.jpg')).exists()
-    assert len(list(settings.cache_dir.glob('*.jpg'))) == 2
+    assert len(list(settings.cache_dir.glob('*.jpg'))) == 1
 
 async def test_atomic_manifest_failure(settings, monkeypatch):
     cache = PhotoCache(settings)
@@ -120,7 +120,7 @@ async def test_dates_survive_restart_offline_refresh_and_partial_replacement(set
     assert not await restored.refresh(Source([], fail=True))
     assert restored.taken_date_for(IDS[0]) == '2020-01-02'
     assert await restored.refresh(DatedSource([IDS[2]]))
-    assert restored.taken_date_for(IDS[0]) == '2020-01-02'
+    assert restored.taken_date_for(IDS[0]) is None
     assert restored.taken_date_for(IDS[1]) is None
 
 async def test_old_cache_gains_dates_without_redownloading_images(settings):
@@ -144,3 +144,38 @@ async def test_invalid_cached_dates_do_not_block_photo_playback(settings):
     restored.load()
     assert restored.photo_ids() == IDS[:2]
     assert all(restored.taken_date_for(a) is None for a in IDS[:2])
+
+async def test_legacy_cache_is_not_served_before_visibility_check(settings):
+    (settings.cache_dir / (IDS[0] + '.jpg')).write_bytes(jpeg())
+    (settings.cache_dir / 'manifest.json').write_text(json.dumps({'version': 1, 'ids': [IDS[0]]}))
+    cache = PhotoCache(settings)
+    cache.load()
+    assert cache.photo_ids() == []
+    assert cache.path_for(IDS[0]) is None
+    source = Source([IDS[0]])
+    assert await cache.refresh(source)
+    assert source.downloads == []
+    assert cache.photo_ids() == [IDS[0]]
+
+@pytest.mark.parametrize('source', [Source([]), Source([IDS[2]], bad=[IDS[2]])])
+async def test_successful_filtering_never_keeps_excluded_old_photos(settings, source):
+    cache = PhotoCache(settings)
+    await cache.refresh(Source(IDS[:2]))
+    await cache.refresh(source)
+    assert cache.photo_ids() == []
+    assert cache.path_for(IDS[0]) is None
+    restored = PhotoCache(settings)
+    restored.load()
+    assert restored.photo_ids() == []
+    assert not list(settings.cache_dir.glob('*.jpg'))
+
+async def test_location_survives_offline_and_restart(settings):
+    class LocatedSource(Source):
+        async def list_photos(self):
+            return [{'id': IDS[0], 'location': 'China / Guangxi / Nanning'}]
+    cache = PhotoCache(settings)
+    assert await cache.refresh(LocatedSource([IDS[0]]))
+    restored = PhotoCache(settings)
+    restored.load()
+    assert not await restored.refresh(Source([], fail=True))
+    assert restored.location_for(IDS[0]) == 'China / Guangxi / Nanning'

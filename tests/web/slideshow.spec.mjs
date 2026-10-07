@@ -62,7 +62,7 @@ test('empty, bad image, service failure and new batch recover', async ({page}) =
   expect(errors).toEqual([]);
 });
 
-test('keeps actual loaded image when next request becomes unavailable', async ({page}) => {
+test('keeps actual loaded image when next request in the same playlist becomes unavailable', async ({page}) => {
   await setup(page, () => [photo(1), photo(2)]);
   await expect(page.locator('.active')).toHaveAttribute('src', photo(1));
   const cdp = await page.context().newCDPSession(page);
@@ -93,10 +93,10 @@ test('hung image and all bad images preserve display and recover', async ({page}
   await setup(page, () => list);
   await expect(page.locator('.active')).toHaveAttribute('src', photo(1));
   await page.route('**' + photo(3), () => new Promise(() => {}));
-  list = [photo(3)];
+  list = [photo(3), photo(1)];
   await page.clock.runFor(17000);
   await expect(page.locator('.active')).toHaveAttribute('src', photo(1));
-  list = [photo(9)];
+  list = [photo(9), photo(1)];
   await page.clock.runFor(17000);
   await expect(page.locator('.active')).toHaveAttribute('src', photo(1));
   list = [photo(2)];
@@ -109,7 +109,7 @@ test('dates switch with photos, survive failures and hide when missing', async (
   await setup(page, () => list);
   const date = page.locator('#taken-date');
   await expect(date).toHaveText('2020-01-02');
-  list = [{url: photo(9), taken_date: '2021-03-04'}];
+  list = [{url: photo(9), taken_date: '2021-03-04'}, {url: photo(1), taken_date: '2020-01-02'}];
   await page.clock.runFor(3000);
   await expect(date).toHaveText('2020-01-02');
   list = [{url: photo(2), taken_date: '2021-03-04'}];
@@ -137,12 +137,13 @@ for (const [background, expected] of [['white', 'rgb(0, 0, 0)'], ['black', 'rgb(
       return canvas.toDataURL().split(',')[1];
     }, background);
     await page.route('**' + photo(1), route => route.fulfill({body: Buffer.from(body, 'base64'), contentType: 'image/png'}));
-    await page.route('**/api/photos', route => route.fulfill({json: {photos: [{url: photo(1), taken_date: '2020-01-02'}], interval_seconds: 30}}));
+    await page.route('**/api/photos', route => route.fulfill({json: {photos: [{url: photo(1), taken_date: '2020-01-02', location: 'Paris'}], interval_seconds: 30}}));
     await page.clock.runFor(6000);
     const date = page.locator('#taken-date');
     await expect(date).toBeVisible();
     await page.clock.runFor(3500);
     expect(await date.evaluate(el => getComputedStyle(el).color)).toBe(expected);
+    await expect(page.locator('#taken-location')).toHaveCSS('color', expected);
     const box = await date.boundingBox();
     expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize().width);
     expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize().height);
@@ -191,4 +192,44 @@ test('date color follows the visible background during the initial fade', async 
   await expect(date).toHaveCSS('color', 'rgb(255, 255, 255)');
   await page.clock.runFor(3500);
   await expect(date).toHaveCSS('color', 'rgb(0, 0, 0)');
+});
+
+test('location is below date, survives failed loads, and works without date', async ({page}) => {
+  let list = [{url: photo(1), taken_date: '2020-01-02', location: 'China / Guangxi / Nanning'}];
+  const errors = await setup(page, () => list);
+  const date = page.locator('#taken-date'), location = page.locator('#taken-location');
+  await expect(location).toHaveText('China / Guangxi / Nanning');
+  const dateBox = await date.boundingBox(), locationBox = await location.boundingBox();
+  expect(locationBox.y).toBeGreaterThanOrEqual(dateBox.y + dateBox.height);
+  list = [{url: photo(9), location: 'London'}, {url: photo(1), taken_date: '2020-01-02', location: 'China / Guangxi / Nanning'}];
+  await page.clock.runFor(3000);
+  await expect(location).toHaveText('China / Guangxi / Nanning');
+  list = [{url: photo(2), location: '<img src=x onerror=alert(1)>'}];
+  await expect.poll(async () => { await page.clock.runFor(2000); return location.textContent(); }).toBe('<img src=x onerror=alert(1)>');
+  await expect(date).toBeHidden();
+  expect(await location.locator('img').count()).toBe(0);
+  list = [{url: photo(1)}];
+  await expect.poll(async () => { await page.clock.runFor(2000); return location.isHidden(); }).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('successful empty playlist removes visible photos and metadata immediately', async ({page}) => {
+  let list = [{url: photo(1), taken_date: '2020-01-02', location: 'Paris'}];
+  await setup(page, () => list);
+  await expect(page.locator('#taken-location')).toHaveText('Paris');
+  list = [];
+  await expect.poll(async () => { await page.clock.runFor(2000); return page.locator('.active').count(); }).toBe(0);
+  await expect(page.locator('#taken-date')).toBeHidden();
+  await expect(page.locator('#taken-location')).toBeHidden();
+  await expect(page.locator('#waiting')).toBeVisible();
+});
+
+test('successful refresh drops an excluded outgoing slide during crossfade', async ({page}) => {
+  let list = [photo(1), photo(2)];
+  await setup(page, () => list, 15);
+  await expect(page.locator('.active')).toHaveAttribute('src', photo(1));
+  list = [photo(2)];
+  await page.clock.runFor(16000);
+  await expect(page.locator('.active')).toHaveAttribute('src', photo(2));
+  await expect(page.locator(`.slide[src="${photo(1)}"]`)).toHaveCount(0);
 });

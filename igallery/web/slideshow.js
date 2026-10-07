@@ -3,12 +3,14 @@ import { createPlayer } from './player.js';
 const slides = [...document.querySelectorAll('.slide')];
 let active = 0;
 const dateLabel = document.querySelector('#taken-date');
+const locationLabel = document.querySelector('#taken-location');
+const info = document.querySelector('#photo-info');
 let colorFrame;
 
 function updateDateColor() {
   cancelAnimationFrame(colorFrame);
-  if (dateLabel.hidden) return;
-  const box = dateLabel.getBoundingClientRect();
+  if (info.hidden) return;
+  const box = info.getBoundingClientRect();
   const canvas = document.createElement('canvas');
   canvas.width = 32; canvas.height = 8;
   const ctx = canvas.getContext('2d', {willReadFrequently: true});
@@ -35,9 +37,9 @@ function updateDateColor() {
     luminance += .2126 * linear(pixels[i]) + .7152 * linear(pixels[i + 1]) + .0722 * linear(pixels[i + 2]);
   }
   const light = luminance / (32 * 8) > .179;
-  dateLabel.style.color = light ? '#000' : '#fff';
+  info.style.color = light ? '#000' : '#fff';
   const shadow = light ? '#fff' : '#000';
-  dateLabel.style.textShadow = `0 1px 3px ${shadow}, 0 0 2px ${shadow}`;
+  info.style.textShadow = `0 1px 3px ${shadow}, 0 0 2px ${shadow}`;
   if (fading) colorFrame = requestAnimationFrame(updateDateColor);
 }
 
@@ -65,7 +67,7 @@ const player = createPlayer({
       image.src = url;
     });
   },
-  showImage(url, image, date) {
+  showImage(url, image, date, location) {
     const next = 1 - active;
     image.className = 'slide';
     image.alt = '';
@@ -81,7 +83,28 @@ const player = createPlayer({
     dateLabel.textContent = date || '';
     dateLabel.dateTime = date || '';
     dateLabel.hidden = !date;
+    locationLabel.textContent = location || '';
+    locationLabel.hidden = !location;
+    info.hidden = !date && !location;
     updateDateColor();
+  },
+  clearImage() {
+    cancelAnimationFrame(colorFrame);
+    for (const image of slides) {
+      image.classList.remove('active');
+      image.removeAttribute('src');
+    }
+    dateLabel.hidden = locationLabel.hidden = info.hidden = true;
+    dateLabel.textContent = locationLabel.textContent = '';
+    document.querySelector('#waiting').hidden = false;
+  },
+  retainImages(urls) {
+    for (const image of slides) {
+      if (!urls.includes(image.getAttribute('src'))) {
+        image.classList.remove('active');
+        image.removeAttribute('src');
+      }
+    }
   },
   wait: ms => new Promise(resolve => setTimeout(resolve, ms))
 });

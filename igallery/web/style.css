@@ -6,7 +6,11 @@ html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; cursor: non
 .slide.active { opacity: 1; }
 #waiting { position: absolute; top: 50%; width: 100%; text-align: center;
            font: 18px Georgia, serif; letter-spacing: .08em; }
-#taken-date { position: absolute; right: clamp(16px, 2vw, 40px); bottom: clamp(16px, 2vh, 32px);
+#photo-info { position: absolute; right: clamp(16px, 2vw, 40px); bottom: clamp(16px, 2vh, 32px);
               font: clamp(16px, 1.5vw, 26px) Georgia, serif; letter-spacing: .06em;
+              max-width: min(70vw, 600px); text-align: right;
               color: #fff; text-shadow: 0 1px 3px #000, 0 0 2px #000; pointer-events: none; }
+#taken-date, #taken-location { display: block; }
+#taken-date[hidden], #taken-location[hidden] { display: none; }
+#taken-location { font-size: .75em; line-height: 1.4; margin-top: .35em; overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) { .slide { transition: none; } }

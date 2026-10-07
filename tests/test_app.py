@@ -2,11 +2,13 @@ import asyncio
 import io
 import json
 import time
+import httpx
 from PIL import Image
 from fastapi.testclient import TestClient
 from igallery.app import create_app
 from igallery.cache import PhotoCache
 from igallery.config import load_settings
+from igallery.immich import ImmichClient
 
 ID = '00000000-0000-0000-0000-000000000001'
 
@@ -25,7 +27,7 @@ def test_cached_photo_available_during_blocked_refresh(tmp_path):
     buf = io.BytesIO()
     Image.new('RGB', (10, 10)).save(buf, 'JPEG')
     (tmp_path / (ID + '.jpg')).write_bytes(buf.getvalue())
-    (tmp_path / 'manifest.json').write_text('{"version":1,"ids":["' + ID + '"]}')
+    (tmp_path / 'manifest.json').write_text('{"version":2,"ids":["' + ID + '"]}')
     with TestClient(create_app(cfg, Source())) as client:
         data = client.get('/api/photos').json()
         assert data == {'photos': [{'id': ID, 'url': '/api/photo/' + ID}], 'interval_seconds': 30}
@@ -47,10 +49,10 @@ def test_empty_startup_and_failure_health(tmp_path):
     with TestClient(create_app(settings(tmp_path), Empty())) as client:
         for _ in range(50):
             health = client.get('/health').json()
-            if health['last_refresh_success'] is False:
+            if health['last_refresh_success'] is True:
                 break
             time.sleep(.01)
-        assert health == {'status': 'ok', 'cache_count': 0, 'last_refresh_success': False}
+        assert health == {'status': 'ok', 'cache_count': 0, 'last_refresh_success': True}
         assert client.get('/').status_code == 200
         assert client.get('/api/photos').json()['photos'] == []
         assert client.post('/api/refresh').status_code == 404
@@ -73,9 +75,25 @@ def test_api_exposes_cached_date_without_private_metadata(tmp_path):
     Image.new('RGB', (10, 10)).save(buf, 'JPEG')
     (tmp_path / (ID + '.jpg')).write_bytes(buf.getvalue())
     (tmp_path / 'manifest.json').write_text(json.dumps({
-        'version': 1, 'ids': [ID], 'dates': {ID: '2020-01-02'},
+        'version': 2, 'ids': [ID], 'dates': {ID: '2020-01-02'}, 'locations': {ID: 'Paris'},
     }))
     with TestClient(create_app(settings(tmp_path), Source())) as client:
         assert client.get('/api/photos').json()['photos'] == [
-            {'id': ID, 'url': '/api/photo/' + ID, 'taken_date': '2020-01-02'},
+            {'id': ID, 'url': '/api/photo/' + ID, 'taken_date': '2020-01-02', 'location': 'Paris'},
         ]
+
+async def test_locked_and_unknown_assets_are_never_downloaded_or_cached(tmp_path):
+    calls = []
+    def handler(req):
+        calls.append(req.url.path)
+        return httpx.Response(200, json=[
+            {'id': ID, 'type': 'IMAGE', 'visibility': 'locked'},
+            {'id': '00000000-0000-0000-0000-000000000002', 'type': 'IMAGE'},
+        ])
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        cache = PhotoCache(settings(tmp_path))
+        assert await cache.refresh(ImmichClient(settings(tmp_path), http))
+        assert cache.photo_ids() == []
+        assert cache.path_for(ID) is None
+        assert not list(tmp_path.glob('*.jpg'))
+        assert calls == ['/api/search/random']

@@ -6,6 +6,23 @@ import httpx
 from .config import Settings, valid_id
 
 MAX_IMAGE_BYTES = 25 * 1024 * 1024
+PUBLIC_VISIBILITIES = {'timeline', 'archive', 'hidden'}
+
+
+def valid_location(value) -> str | None:
+    if not isinstance(value, str):
+        return None
+    value = ' '.join(value.split())
+    return value[:300] or None
+
+
+def taken_location(asset) -> str | None:
+    exif = asset.get('exifInfo')
+    if not isinstance(exif, dict):
+        return None
+    parts = list(dict.fromkeys(part for key in ('country', 'state', 'city')
+                              if (part := valid_location(exif.get(key)))))
+    return valid_location(' / '.join(parts))
 
 
 def valid_date(value) -> str | None:
@@ -51,7 +68,9 @@ class ImmichClient:
     async def list_photos(self) -> list[dict]:
         album = self.settings.album_id
         method, path = ("GET", "/albums/" + album) if album else ("POST", "/search/random")
-        kwargs = {} if album else {"json": {"size": self.settings.cache_count, "type": "IMAGE"}}
+        kwargs = {} if album else {"json": {"size": self.settings.cache_count, "withExif": True, "filter": {
+            "type": {"eq": "IMAGE"}, "visibility": {"notIn": ["locked"]},
+        }}}
         try:
             async with self._request(method, path, **kwargs) as response:
                 if response.status_code != 200:
@@ -63,8 +82,11 @@ class ImmichClient:
                     raise SourceError("source_schema")
                 photos = {}
                 for asset in assets:
-                    if isinstance(asset, dict) and asset.get("type") == "IMAGE" and valid_id(asset.get("id")):
-                        photos.setdefault(asset['id'], {'id': asset['id'], 'taken_date': taken_date(asset)})
+                    if (isinstance(asset, dict) and asset.get("type") == "IMAGE"
+                            and isinstance(asset.get('visibility'), str)
+                            and asset['visibility'] in PUBLIC_VISIBILITIES and valid_id(asset.get("id"))):
+                        photos.setdefault(asset['id'], {'id': asset['id'], 'taken_date': taken_date(asset),
+                                                       'location': taken_location(asset)})
                 photos = list(photos.values())
                 if album:
                     random.shuffle(photos)

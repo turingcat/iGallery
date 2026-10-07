@@ -10,19 +10,19 @@ CFG = load_settings({'IMMICH_URL': 'https://nas.example', 'IMMICH_API_KEY': 'uni
 async def test_random_filters_duplicates_and_videos():
     def handler(req):
         assert req.url.path == '/api/search/random'
-        assert json.loads(req.content) == {'size': 100, 'type': 'IMAGE'}
+        assert json.loads(req.content) == {'size': 100, 'withExif': True, 'filter': {'type': {'eq': 'IMAGE'}, 'visibility': {'notIn': ['locked']}}}
         assert req.headers['x-api-key'] == 'unit-test-secret'
-        return httpx.Response(200, json=[{'id': ID, 'type': 'IMAGE'}, {'id': ID, 'type': 'IMAGE'}, {'id': '../bad', 'type': 'IMAGE'}, {'id': '00000000-0000-0000-0000-000000000002', 'type': 'VIDEO'}])
+        return httpx.Response(200, json=[{'id': ID, 'type': 'IMAGE', 'visibility': 'timeline'}, {'id': ID, 'type': 'IMAGE', 'visibility': 'timeline'}, {'id': '../bad', 'type': 'IMAGE', 'visibility': 'timeline'}, {'id': '00000000-0000-0000-0000-000000000002', 'type': 'VIDEO'}])
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-        assert await ImmichClient(CFG, http).list_photos() == [{'id': ID, 'taken_date': None}]
+        assert await ImmichClient(CFG, http).list_photos() == [{'id': ID, 'taken_date': None, 'location': None}]
 
 async def test_album():
     cfg = load_settings({'IMMICH_URL': 'https://nas.example', 'IMMICH_API_KEY': 'unit-test-secret', 'IMMICH_ALBUM_ID': ID, 'IGALLERY_CACHE_COUNT': '1'})
     def handler(req):
         assert req.url.path == '/api/albums/' + ID
-        return httpx.Response(200, json={'assets': [{'id': ID, 'type': 'IMAGE'}]})
+        return httpx.Response(200, json={'assets': [{'id': ID, 'type': 'IMAGE', 'visibility': 'timeline'}]})
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-        assert await ImmichClient(cfg, http).list_photos() == [{'id': ID, 'taken_date': None}]
+        assert await ImmichClient(cfg, http).list_photos() == [{'id': ID, 'taken_date': None, 'location': None}]
 
 async def test_thumbnail():
     def handler(req):
@@ -76,6 +76,37 @@ async def test_invalid_transport_url_is_sanitized():
     ({'localDateTime': '2020-01-02-not-a-timestamp', 'exifInfo': None}, None),
 ])
 async def test_photo_dates_preserve_local_day_and_never_use_upload_time(metadata, expected):
-    asset = {'id': ID, 'type': 'IMAGE', **metadata}
+    asset = {'id': ID, 'type': 'IMAGE', 'visibility': 'timeline', **metadata}
     async with httpx.AsyncClient(transport=httpx.MockTransport(lambda req: httpx.Response(200, json=[asset]))) as http:
-        assert await ImmichClient(CFG, http).list_photos() == [{'id': ID, 'taken_date': expected}]
+        assert await ImmichClient(CFG, http).list_photos() == [{'id': ID, 'taken_date': expected, 'location': None}]
+
+@pytest.mark.parametrize('visibility', ['locked', None, 'unknown', {'unexpected': 'locked'}])
+async def test_untrusted_visibility_is_not_returned(visibility):
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda req: httpx.Response(200, json=[
+        {'id': ID, 'type': 'IMAGE', 'visibility': visibility}
+    ]))) as http:
+        assert await ImmichClient(CFG, http).list_photos() == []
+
+@pytest.mark.parametrize('exif,expected', [
+    ({'country': 'China', 'state': 'Guangxi', 'city': 'Nanning'}, 'China / Guangxi / Nanning'),
+    ({'country': ' Singapore ', 'state': 'Singapore', 'city': 'Singapore'}, 'Singapore'),
+    ({'city': 'Paris', 'latitude': 48.86, 'longitude': 2.35}, 'Paris'),
+    ({'city': None, 'country': 42}, None),
+])
+async def test_location_uses_existing_place_names_only(exif, expected):
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda req: httpx.Response(200, json=[
+        {'id': ID, 'type': 'IMAGE', 'visibility': 'timeline', 'exifInfo': exif}
+    ]))) as http:
+        photos = await ImmichClient(CFG, http).list_photos()
+        assert photos[0]['location'] == expected
+
+@pytest.mark.parametrize('visibility', ['timeline', 'archive', 'hidden'])
+async def test_album_excludes_locked_assets_but_keeps_known_nonlocked_states(visibility):
+    cfg = load_settings({'IMMICH_URL': 'https://nas.example', 'IMMICH_API_KEY': 'unit-test-secret', 'IMMICH_ALBUM_ID': ID})
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda req: httpx.Response(200, json={'assets': [
+        {'id': ID, 'type': 'IMAGE', 'visibility': 'locked'},
+        {'id': '00000000-0000-0000-0000-000000000002', 'type': 'IMAGE', 'visibility': visibility},
+    ]}))) as http:
+        assert await ImmichClient(cfg, http).list_photos() == [
+            {'id': '00000000-0000-0000-0000-000000000002', 'taken_date': None, 'location': None},
+        ]

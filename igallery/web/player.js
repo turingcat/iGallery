@@ -1,7 +1,8 @@
 const localPhoto = /^\/api\/photo\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-export function createPlayer({ fetchList, loadImage, showImage, wait }) {
+export function createPlayer({ fetchList, loadImage, showImage, clearImage = () => {}, retainImages = () => {}, wait }) {
   let photos = [], index = 0, interval = 30000, visible = false, pending = null;
+  let visibleUrl = null;
   function preload(url) {
     return loadImage(url).then(image => ({image}), () => null);
   }
@@ -13,6 +14,10 @@ export function createPlayer({ fetchList, loadImage, showImage, wait }) {
           if (!Array.isArray(data.photos)) throw Error('Invalid playlist');
           const next = data.photos.filter(p => localPhoto.test(p.url));
           photos = next;
+          retainImages(photos.map(p => p.url));
+          if (visible && !photos.some(p => p.url === visibleUrl)) {
+            clearImage(); visible = false; visibleUrl = null;
+          }
           if (Number.isFinite(data.interval_seconds) && data.interval_seconds > 0) {
             interval = data.interval_seconds * 1000;
           }
@@ -29,8 +34,9 @@ export function createPlayer({ fetchList, loadImage, showImage, wait }) {
         pending = null;
         const loaded = await ready;
         if (loaded) {
-          showImage(url, loaded.image, photo.taken_date);
+          showImage(url, loaded.image, photo.taken_date, photo.location);
           visible = true;
+          visibleUrl = url;
           if (index < photos.length) pending = preload(photos[index].url);
           return;
         }
