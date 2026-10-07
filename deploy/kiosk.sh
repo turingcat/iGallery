@@ -18,12 +18,16 @@ while true; do
 import json
 import os
 import shutil
+import socket
 import tempfile
 from pathlib import Path
 
 profile = Path.home() / '.config/igallery-chromium'
-if (profile / 'SingletonLock').is_symlink():
-    raise SystemExit('Close the igallery Chromium session before starting kiosk')
+lock = profile / 'SingletonLock'
+if lock.is_symlink():
+    host, _, pid = os.readlink(lock).rpartition('-')
+    if host != socket.gethostname() or not pid.isdigit() or Path('/proc', pid).exists():
+        raise SystemExit('Close the igallery Chromium session before starting kiosk')
 preferences = profile / 'Default/Preferences'
 preferences.parent.mkdir(parents=True, exist_ok=True)
 data = json.loads(preferences.read_text()) if preferences.exists() else {}

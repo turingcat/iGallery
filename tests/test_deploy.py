@@ -1,6 +1,7 @@
 import os
 import json
 import subprocess
+import socket
 from pathlib import Path
 
 
@@ -11,6 +12,7 @@ def test_kiosk_waits_for_service_and_uses_local_url(tmp_path):
     count = tmp_path / 'polls'
     preferences = tmp_path / '.config/igallery-chromium/Default/Preferences'
     preferences.parent.mkdir(parents=True)
+    (preferences.parent.parent / 'SingletonLock').symlink_to(socket.gethostname() + '-99999999')
     preferences.write_text(json.dumps({'translate': {'enabled': True}, 'unrelated': {'keep': 42}}))
     (bindir / 'curl').write_text('#!/bin/sh\nif [ ! -f "$POLLS" ]; then touch "$POLLS"; exit 1; fi\nexit 0\n')
     (bindir / 'sleep').write_text('#!/bin/sh\necho sleep >> "$CALLS"\n')
