@@ -61,6 +61,13 @@ def test_ambient_proxy_does_not_break_local_frame(tmp_path, monkeypatch):
     with TestClient(create_app(settings(tmp_path), Source())) as client:
         assert client.get('/health').status_code == 200
 
+def test_player_scripts_are_not_cached_across_upgrades(tmp_path):
+    with TestClient(create_app(settings(tmp_path), Source())) as client:
+        for path in ('/static/player.js', '/static/slideshow.js', '/static/style.css'):
+            response = client.get(path)
+            assert response.status_code == 200
+            assert response.headers.get('cache-control') == 'no-store'
+
 def test_api_exposes_cached_date_without_private_metadata(tmp_path):
     buf = io.BytesIO()
     Image.new('RGB', (10, 10)).save(buf, 'JPEG')

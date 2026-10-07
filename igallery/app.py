@@ -40,6 +40,13 @@ def create_app(settings: Settings, source: ImmichClient | None = None) -> FastAP
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.cache = cache
 
+    @app.middleware("http")
+    async def static_no_cache(request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.get("/")
     def index():
         return FileResponse(WEB / "index.html", headers={"Cache-Control": "no-store"})
