@@ -52,7 +52,7 @@ curl --noproxy '*' -fsS http://127.0.0.1:8080/health
 
 脚本在 Wayland 会话显式使用 Wayland，在 X11 会话使用 X11；专用 profile 使用 `--password-store=basic` 避免无人值守启动被钥匙串解锁对话框阻塞。不要在这个 profile 登录其他网站或保存密码：basic 密码存储不使用系统钥匙串加密，应用的 Immich Key 仍只在后端私密配置中。
 
-脚本通过 `--disable-features=Translate` 禁用翻译功能及提示，不改写已有 profile。更新脚本后需退出并重新启动 igallery 的 Chromium 才会生效。
+脚本通过 `--disable-features=Translate` 禁用翻译，并在启动前将专用 profile 的 `translate.enabled` 设置为 `false`，兼容忽略该 feature flag 的 Chromium 版本。首次修改前备份为 `Default/Preferences.igallery-backup`，原子写入并保留其他偏好；普通浏览器 profile 不受影响。必须先退出旧的 igallery Chromium，不能在浏览器运行时改写偏好。更新脚本后需退出并重新启动 kiosk 才会生效。
 
 照片右下角显示拍摄日期（`YYYY-MM-DD`），优先使用 Immich 的 `localDateTime`，其次使用 EXIF `dateTimeOriginal`，保留元数据中的日期、不按浏览器时区换算；缺失或无效时不显示，不用上传时间替代。日期随缓存清单保存，离线也可显示；旧缓存下次成功刷新时补齐日期，无需重新下载已有图片。文字根据所在区域（包含黑色留边）的亮度自动选择黑色或白色，并配反色阴影。
 
