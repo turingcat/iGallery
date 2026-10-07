@@ -13,7 +13,7 @@ async function setup(page, playlist, interval = 1) {
     if (url.pathname === '/api/photos') {
       const data = playlist();
       if (data === null) return route.fulfill({status: 500});
-      return route.fulfill({json: {photos: data.map(url => ({url})), interval_seconds: interval}});
+      return route.fulfill({json: {photos: data.map(p => typeof p === 'string' ? {url: p} : p), interval_seconds: interval}});
     }
     if (url.pathname.startsWith('/api/photo/')) {
       if (url.pathname === photo(9)) return route.fulfill({status: 404});
@@ -102,4 +102,93 @@ test('hung image and all bad images preserve display and recover', async ({page}
   list = [photo(2)];
   await page.clock.runFor(17000);
   await expect(page.locator('.active')).toHaveAttribute('src', photo(2));
+});
+
+test('dates switch with photos, survive failures and hide when missing', async ({page}) => {
+  let list = [{url: photo(1), taken_date: '2020-01-02'}];
+  await setup(page, () => list);
+  const date = page.locator('#taken-date');
+  await expect(date).toHaveText('2020-01-02');
+  list = [{url: photo(9), taken_date: '2021-03-04'}];
+  await page.clock.runFor(3000);
+  await expect(date).toHaveText('2020-01-02');
+  list = [{url: photo(2), taken_date: '2021-03-04'}];
+  await expect.poll(async () => {
+    await page.clock.runFor(2000);
+    return date.textContent();
+  }).toBe('2021-03-04');
+  list = [{url: photo(1)}];
+  await expect.poll(async () => {
+    await page.clock.runFor(2000);
+    return date.isHidden();
+  }).toBe(true);
+  await expect(date).toBeHidden();
+});
+
+for (const [background, expected] of [['white', 'rgb(0, 0, 0)'], ['black', 'rgb(255, 255, 255)']]) {
+  test(`date text contrasts with ${background} photo background`, async ({page}) => {
+    const errors = await setup(page, () => []);
+    // Keep the sampled label area inside the image on both viewport shapes.
+    const body = await page.evaluate(color => {
+      const canvas = document.createElement('canvas');
+      canvas.width = innerWidth; canvas.height = innerHeight;
+      const ctx = canvas.getContext('2d'); ctx.fillStyle = color;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL().split(',')[1];
+    }, background);
+    await page.route('**' + photo(1), route => route.fulfill({body: Buffer.from(body, 'base64'), contentType: 'image/png'}));
+    await page.route('**/api/photos', route => route.fulfill({json: {photos: [{url: photo(1), taken_date: '2020-01-02'}], interval_seconds: 30}}));
+    await page.clock.runFor(6000);
+    const date = page.locator('#taken-date');
+    await expect(date).toBeVisible();
+    await page.clock.runFor(3500);
+    expect(await date.evaluate(el => getComputedStyle(el).color)).toBe(expected);
+    const box = await date.boundingBox();
+    expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize().width);
+    expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize().height);
+    expect(errors).toEqual([]);
+  });
+}
+
+test('samples the label region rather than the whole photo and updates on resize', async ({page}) => {
+  await setup(page, () => []);
+  const body = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = innerWidth; canvas.height = innerHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'black'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'white'; ctx.fillRect(canvas.width - 320, canvas.height - 100, 320, 100);
+    return canvas.toDataURL().split(',')[1];
+  });
+  await page.route('**' + photo(1), route => route.fulfill({body: Buffer.from(body, 'base64'), contentType: 'image/png'}));
+  await page.route('**/api/photos', route => route.fulfill({json: {photos: [{url: photo(1), taken_date: '2020-01-02'}], interval_seconds: 30}}));
+  await page.clock.runFor(6000);
+  const date = page.locator('#taken-date');
+  await expect(date).toBeVisible();
+  await page.clock.runFor(3500);
+  await expect(date).toHaveCSS('color', 'rgb(0, 0, 0)');
+  // A taller viewport creates a black bar under the unchanged photo.
+  const size = page.viewportSize();
+  await page.setViewportSize({width: size.width, height: size.height + 300});
+  await page.clock.runFor(100);
+  await expect(date).toHaveCSS('color', 'rgb(255, 255, 255)');
+});
+
+test('date color follows the visible background during the initial fade', async ({page}) => {
+  await setup(page, () => []);
+  const body = await page.evaluate(() => {
+    const c = document.createElement('canvas'); c.width = innerWidth; c.height = innerHeight;
+    const ctx = c.getContext('2d'); ctx.fillStyle = 'white'; ctx.fillRect(0, 0, c.width, c.height);
+    return c.toDataURL().split(',')[1];
+  });
+  await page.route('**' + photo(1), route => route.fulfill({body: Buffer.from(body, 'base64'), contentType: 'image/png'}));
+  await page.route('**/api/photos', route => route.fulfill({json: {photos: [{url: photo(1), taken_date: '2020-01-02'}], interval_seconds: 30}}));
+  await page.clock.runFor(5000);
+  const date = page.locator('#taken-date');
+  await expect(date).toBeVisible();
+  const opacity = await page.locator('.active').evaluate(el => Number(getComputedStyle(el).opacity));
+  expect(opacity).toBeLessThan(.1);
+  await expect(date).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await page.clock.runFor(3500);
+  await expect(date).toHaveCSS('color', 'rgb(0, 0, 0)');
 });

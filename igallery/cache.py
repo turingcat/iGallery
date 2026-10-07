@@ -10,7 +10,7 @@ from pathlib import Path
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from .config import Settings, valid_id
-from .immich import ImmichClient, SourceError
+from .immich import ImmichClient, SourceError, valid_date
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,7 @@ class PhotoCache:
         self.directory = settings.cache_dir
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         self._ids: list[str] = []
+        self._dates: dict[str, str] = {}
         self.last_refresh_success: bool | None = None
 
     def _path(self, asset_id):
@@ -74,11 +75,16 @@ class PhotoCache:
             self._ids = list(dict.fromkeys(
                 asset_id for asset_id in ids if valid_id(asset_id) and self._exists(asset_id)
             ))[:self.settings.cache_count]
+            dates = manifest.get('dates', {})
+            self._dates = {a: day for a in self._ids if (day := valid_date(dates.get(a)))} if isinstance(dates, dict) else {}
         except (OSError, ValueError):
             logger.warning("cache_manifest_unavailable")
 
     def photo_ids(self) -> list[str]:
         return self._ids.copy()
+
+    def taken_date_for(self, asset_id: str) -> str | None:
+        return self._dates.get(asset_id)
 
     def path_for(self, asset_id: str) -> Path | None:
         if asset_id not in self._ids or not valid_id(asset_id) or not self._exists(asset_id):
@@ -88,9 +94,13 @@ class PhotoCache:
     async def refresh(self, source: ImmichClient) -> bool:
         self.last_refresh_success = False
         try:
-            candidates = await source.list_ids()
+            candidates = await source.list_photos()
             ready = []
-            for asset_id in dict.fromkeys(a for a in candidates if valid_id(a)):
+            dates = self._dates.copy()
+            for photo in candidates:
+                asset_id = photo['id']
+                if not valid_id(asset_id) or asset_id in ready:
+                    continue
                 if len(ready) >= self.settings.cache_count:
                     break
                 try:
@@ -99,15 +109,22 @@ class PhotoCache:
                         image = await asyncio.to_thread(normalized_image, data)
                         await asyncio.to_thread(atomic_write, self._path(asset_id), image)
                     ready.append(asset_id)
+                    day = valid_date(photo.get('taken_date'))
+                    if day:
+                        dates[asset_id] = day
+                    else:
+                        dates.pop(asset_id, None)
                 except (SourceError, OSError, ValueError, UnidentifiedImageError,
                         Image.DecompressionBombError, Image.DecompressionBombWarning):
                     logger.warning("cache_photo_failed")
             if not ready:
                 return False
             ids = list(dict.fromkeys(ready + [a for a in self._ids if self._exists(a)]))[:self.settings.cache_count]
-            manifest = json.dumps({"version": 1, "ids": ids}).encode()
+            dates = {a: dates[a] for a in ids if a in dates}
+            manifest = json.dumps({"version": 1, "ids": ids, "dates": dates}).encode()
             await asyncio.to_thread(atomic_write, self.directory / "manifest.json", manifest)
             self._ids = ids
+            self._dates = dates
             self.last_refresh_success = True
             for path in self.directory.glob("*.jpg"):
                 if valid_id(path.stem) and path.stem not in ids:

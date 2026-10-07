@@ -19,6 +19,7 @@ def test_kiosk_waits_for_service_and_uses_local_url(tmp_path):
     assert calls[0] == 'sleep'
     assert '--kiosk' in calls
     assert '--password-store=basic' in calls
+    assert '--disable-features=Translate' in calls
     assert 'http://127.0.0.1:8080' in calls
     assert '--no-sandbox' not in calls
     assert result.returncode != 0

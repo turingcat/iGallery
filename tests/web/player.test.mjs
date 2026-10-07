@@ -54,3 +54,16 @@ test('retains the decoded image resource through presentation', async () => {
   await player.step();
   assert.equal(displayed, resource);
 });
+
+test('passes the visible photo date only after successful loading', async () => {
+  const shown = [];
+  const player = createPlayer({
+    fetchList: async () => ({photos: [
+      {url: A, taken_date: '2020-01-02'}, {url: B, taken_date: '2021-03-04'}
+    ]}),
+    loadImage: async url => { if (url === B) throw Error('missing'); return {}; },
+    showImage: (url, image, date) => shown.push([url, date]), wait: async () => {}
+  });
+  await player.step(); await player.step();
+  assert.deepEqual(shown, [[A, '2020-01-02']]);
+});

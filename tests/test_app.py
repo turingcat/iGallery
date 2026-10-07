@@ -1,5 +1,6 @@
 import asyncio
 import io
+import json
 import time
 from PIL import Image
 from fastapi.testclient import TestClient
@@ -10,7 +11,7 @@ from igallery.config import load_settings
 ID = '00000000-0000-0000-0000-000000000001'
 
 class Source:
-    async def list_ids(self):
+    async def list_photos(self):
         await asyncio.sleep(60)
         return []
 
@@ -41,7 +42,7 @@ def test_cached_photo_available_during_blocked_refresh(tmp_path):
 
 def test_empty_startup_and_failure_health(tmp_path):
     class Empty:
-        async def list_ids(self):
+        async def list_photos(self):
             return []
     with TestClient(create_app(settings(tmp_path), Empty())) as client:
         for _ in range(50):
@@ -59,3 +60,15 @@ def test_ambient_proxy_does_not_break_local_frame(tmp_path, monkeypatch):
     monkeypatch.setenv('ALL_PROXY', 'socks5://127.0.0.1:1')
     with TestClient(create_app(settings(tmp_path), Source())) as client:
         assert client.get('/health').status_code == 200
+
+def test_api_exposes_cached_date_without_private_metadata(tmp_path):
+    buf = io.BytesIO()
+    Image.new('RGB', (10, 10)).save(buf, 'JPEG')
+    (tmp_path / (ID + '.jpg')).write_bytes(buf.getvalue())
+    (tmp_path / 'manifest.json').write_text(json.dumps({
+        'version': 1, 'ids': [ID], 'dates': {ID: '2020-01-02'},
+    }))
+    with TestClient(create_app(settings(tmp_path), Source())) as client:
+        assert client.get('/api/photos').json()['photos'] == [
+            {'id': ID, 'url': '/api/photo/' + ID, 'taken_date': '2020-01-02'},
+        ]

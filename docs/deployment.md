@@ -52,6 +52,10 @@ curl --noproxy '*' -fsS http://127.0.0.1:8080/health
 
 脚本在 Wayland 会话显式使用 Wayland，在 X11 会话使用 X11；专用 profile 使用 `--password-store=basic` 避免无人值守启动被钥匙串解锁对话框阻塞。不要在这个 profile 登录其他网站或保存密码：basic 密码存储不使用系统钥匙串加密，应用的 Immich Key 仍只在后端私密配置中。
 
+脚本通过 `--disable-features=Translate` 禁用翻译功能及提示，不改写已有 profile。更新脚本后需退出并重新启动 igallery 的 Chromium 才会生效。
+
+照片右下角显示拍摄日期（`YYYY-MM-DD`），优先使用 Immich 的 `localDateTime`，其次使用 EXIF `dateTimeOriginal`，保留元数据中的日期、不按浏览器时区换算；缺失或无效时不显示，不用上传时间替代。日期随缓存清单保存，离线也可显示；旧缓存下次成功刷新时补齐日期，无需重新下载已有图片。文字根据所在区域（包含黑色留边）的亮度自动选择黑色或白色，并配反色阴影。
+
 labwc 桌面：如果用户没有 `~/.config/labwc/autostart`，先复制 `/etc/xdg/labwc/autostart`（存在时），以保留面板等默认启动项；已有文件先备份，不能覆盖。
 
 ```bash

@@ -15,6 +15,7 @@ while true; do
     done
     "$browser" "$platform" --kiosk --noerrdialogs --disable-infobars --no-first-run \
         --disable-session-crashed-bubble \
+        --disable-features=Translate \
         --password-store=basic \
         --user-data-dir="$HOME/.config/igallery-chromium" \
         http://127.0.0.1:8080 || true

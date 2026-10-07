@@ -18,10 +18,10 @@ class Source:
     def __init__(self, ids, bad=(), fail=False):
         self.ids, self.bad, self.fail = ids, bad, fail
         self.downloads = []
-    async def list_ids(self):
+    async def list_photos(self):
         if self.fail:
             raise SourceError('source_request')
-        return self.ids
+        return [{'id': a, 'taken_date': None} for a in self.ids]
     async def download(self, asset_id):
         self.downloads.append(asset_id)
         return b'bad' if asset_id in self.bad else jpeg()
@@ -107,3 +107,40 @@ async def test_corrupted_referenced_image_is_downloaded_again(settings):
     assert IDS[0] in source.downloads
     with Image.open(restored.path_for(IDS[0])) as image:
         assert image.format == 'JPEG'
+
+async def test_dates_survive_restart_offline_refresh_and_partial_replacement(settings):
+    class DatedSource(Source):
+        async def list_photos(self):
+            return [{'id': a, 'taken_date': '2020-01-02'} for a in self.ids]
+    cache = PhotoCache(settings)
+    assert await cache.refresh(DatedSource(IDS[:2]))
+    restored = PhotoCache(settings)
+    restored.load()
+    assert restored.taken_date_for(IDS[0]) == '2020-01-02'
+    assert not await restored.refresh(Source([], fail=True))
+    assert restored.taken_date_for(IDS[0]) == '2020-01-02'
+    assert await restored.refresh(DatedSource([IDS[2]]))
+    assert restored.taken_date_for(IDS[0]) == '2020-01-02'
+    assert restored.taken_date_for(IDS[1]) is None
+
+async def test_old_cache_gains_dates_without_redownloading_images(settings):
+    cache = PhotoCache(settings)
+    await cache.refresh(Source([IDS[0]]))
+    class DatedSource(Source):
+        async def list_photos(self):
+            return [{'id': IDS[0], 'taken_date': '2020-01-02'}]
+    source = DatedSource([IDS[0]])
+    assert await cache.refresh(source)
+    assert cache.taken_date_for(IDS[0]) == '2020-01-02'
+    assert source.downloads == []
+
+async def test_invalid_cached_dates_do_not_block_photo_playback(settings):
+    cache = PhotoCache(settings)
+    await cache.refresh(Source(IDS[:2]))
+    manifest = json.loads((settings.cache_dir / 'manifest.json').read_text())
+    manifest['dates'] = {IDS[0]: '2020-02-30', IDS[1]: {'unexpected': 'metadata'}}
+    (settings.cache_dir / 'manifest.json').write_text(json.dumps(manifest))
+    restored = PhotoCache(settings)
+    restored.load()
+    assert restored.photo_ids() == IDS[:2]
+    assert all(restored.taken_date_for(a) is None for a in IDS[:2])

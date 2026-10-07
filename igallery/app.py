@@ -48,7 +48,9 @@ def create_app(settings: Settings, source: ImmichClient | None = None) -> FastAP
     def photos():
         from fastapi.responses import JSONResponse
         return JSONResponse({
-            "photos": [{"id": a, "url": "/api/photo/" + a} for a in cache.photo_ids()],
+            "photos": [{"id": a, "url": "/api/photo/" + a,
+                        **({"taken_date": day} if (day := cache.taken_date_for(a)) else {})}
+                       for a in cache.photo_ids()],
             "interval_seconds": settings.interval_seconds,
         }, headers={"Cache-Control": "no-store"})
 

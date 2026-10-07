@@ -23,12 +23,13 @@ export function createPlayer({ fetchList, loadImage, showImage, wait }) {
       if (!photos.length) { await wait(5000); return; }
       if (visible) await wait(interval);
       while (index < photos.length) {
-        const url = photos[index++].url;
+        const photo = photos[index++];
+        const url = photo.url;
         const ready = pending || preload(url);
         pending = null;
         const loaded = await ready;
         if (loaded) {
-          showImage(url, loaded.image);
+          showImage(url, loaded.image, photo.taken_date);
           visible = true;
           if (index < photos.length) pending = preload(photos[index].url);
           return;

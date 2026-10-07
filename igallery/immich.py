@@ -1,10 +1,35 @@
 import random
+from datetime import date, datetime
 
 import httpx
 
 from .config import Settings, valid_id
 
 MAX_IMAGE_BYTES = 25 * 1024 * 1024
+
+
+def valid_date(value) -> str | None:
+    if not isinstance(value, str) or len(value) != 10:
+        return None
+    try:
+        return value if date.fromisoformat(value).isoformat() == value else None
+    except ValueError:
+        return None
+
+
+def taken_date(asset) -> str | None:
+    exif = asset.get('exifInfo')
+    original = exif.get('dateTimeOriginal') if isinstance(exif, dict) else None
+    for value in (asset.get('localDateTime'), original):
+        if isinstance(value, str):
+            try:
+                datetime.fromisoformat(value)
+            except ValueError:
+                continue
+            day = valid_date(value[:10])
+            if day:
+                return day
+    return None
 
 
 class SourceError(Exception):
@@ -23,7 +48,7 @@ class ImmichClient:
             follow_redirects=False, **kwargs,
         )
 
-    async def list_ids(self) -> list[str]:
+    async def list_photos(self) -> list[dict]:
         album = self.settings.album_id
         method, path = ("GET", "/albums/" + album) if album else ("POST", "/search/random")
         kwargs = {} if album else {"json": {"size": self.settings.cache_count, "type": "IMAGE"}}
@@ -36,13 +61,14 @@ class ImmichClient:
                 assets = data.get("assets") if album and isinstance(data, dict) else data
                 if not isinstance(assets, list):
                     raise SourceError("source_schema")
-                ids = list(dict.fromkeys(
-                    a["id"] for a in assets if isinstance(a, dict)
-                    and a.get("type") == "IMAGE" and valid_id(a.get("id"))
-                ))
+                photos = {}
+                for asset in assets:
+                    if isinstance(asset, dict) and asset.get("type") == "IMAGE" and valid_id(asset.get("id")):
+                        photos.setdefault(asset['id'], {'id': asset['id'], 'taken_date': taken_date(asset)})
+                photos = list(photos.values())
                 if album:
-                    random.shuffle(ids)
-                return ids[:self.settings.cache_count]
+                    random.shuffle(photos)
+                return photos[:self.settings.cache_count]
         except (httpx.HTTPError, httpx.InvalidURL, ValueError):
             raise SourceError("source_request") from None
 
